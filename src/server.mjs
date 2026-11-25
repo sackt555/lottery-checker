@@ -154,10 +154,10 @@ const server = http.createServer(async (req, res) => {
     return res.end(`User-agent: *\nAllow: /\nSitemap: ${proto}://${host}/sitemap.xml\n`);
   }
 
-  // ads.txt — ใส่ publisher ID ของคุณ
+  // ads.txt — Google AdSense
   if (url.pathname === '/ads.txt') {
     res.writeHead(200, {'Content-Type':'text/plain'});
-    return res.end(`google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0\n`);
+    return res.end(`google.com, pub-9851215128556924, DIRECT, f08c47fec0942fa0\n`);
   }
 
   // API: history
