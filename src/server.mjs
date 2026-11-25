@@ -201,7 +201,8 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(3001, () => {
-  console.log('🎰 Lottery Checker running at http://localhost:3001');
+const PORT = Number(process.env.PORT) || 3001;
+server.listen(PORT, () => {
+  console.log(`🎰 Lottery Checker running at http://localhost:${PORT}`);
   console.log('📡 Fetching real lottery data from api.alotterydb.com...');
 });
