@@ -1,4 +1,4 @@
-const CACHE = 'lotto-v1';
+const CACHE = 'lotto-v2';
 const STATIC = ['/', '/styles.css', '/app.js', '/manifest.json'];
 
 self.addEventListener('install', e => {

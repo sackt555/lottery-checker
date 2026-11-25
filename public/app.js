@@ -142,6 +142,19 @@ function renderCheck(data) {
   el.innerHTML = html;
 }
 
+function clearNum() {
+  $('numInput').value = '';
+  $('clearBtn').hidden = true;
+  $('checkResult').innerHTML = '';
+  $('numInput').focus();
+}
+
+$('numInput').addEventListener('input', e => {
+  const clean = e.target.value.replace(/\D/g, '').slice(0, 6);
+  if (e.target.value !== clean) e.target.value = clean;
+  $('clearBtn').hidden = clean.length === 0;
+});
+
 $('numInput').addEventListener('keydown', e => { if(e.key==='Enter') checkNum(); });
 
 loadLotto();

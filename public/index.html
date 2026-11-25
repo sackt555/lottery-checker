@@ -108,11 +108,14 @@
 
 <!-- ═══ CHECKER ═══ -->
 <div class="checker">
+  <div class="checker-label">กรอกเลขสลากกินแบ่ง (2–6 หลัก)</div>
   <div class="checker-inner">
     <input id="numInput" type="text" inputmode="numeric" pattern="[0-9]*"
-           maxlength="6" placeholder="กรอกเลขสลาก 2–6 หลัก" autocomplete="off">
+           maxlength="6" placeholder="เช่น 537846" autocomplete="off" aria-label="กรอกเลขสลาก 2 ถึง 6 หลัก">
+    <button id="clearBtn" class="clear-btn" type="button" onclick="clearNum()" title="ล้างเลข" hidden>×</button>
     <button id="checkBtn" onclick="checkNum()">ตรวจ</button>
   </div>
+  <div class="checker-hint">ใส่ได้ทั้งเลขท้าย 2 ตัว, 3 ตัว หรือเลข 6 หลัก</div>
   <div id="checkResult"></div>
 </div>
 
