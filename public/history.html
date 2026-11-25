@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ผลหวยย้อนหลัง — สลากกินแบ่งรัฐบาล ทุกงวด</title>
+<meta name="description" content="ผลสลากกินแบ่งรัฐบาลย้อนหลังทุกงวด รางวัลที่ 1 เลขท้าย 2 ตัว 3 ตัว ครบทุกรางวัล">
+<meta name="keywords" content="ผลหวยย้อนหลัง,หวยย้อนหลัง,ผลสลากย้อนหลัง,ตรวจหวยย้อนหลัง">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0c0c0c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<!-- ═══ GOOGLE ANALYTICS ═══ -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-09JCC479M1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-09JCC479M1');
+</script>
+<style>
+  .hist-item {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .hist-item:hover { background: var(--surface); }
+  .hist-date { font-size: .9rem; font-weight: 600; }
+  .hist-first { font-size: 1.2rem; font-weight: 700; color: var(--gold); letter-spacing: .12em; }
+  .hist-sub { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+  .back-link {
+    display: inline-block;
+    padding: 20px 20px 8px;
+    font-size: .82rem;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .back-link:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ผลหวยย้อนหลัง</div>
+  <div class="period-label">สลากกินแบ่งรัฐบาล</div>
+</header>
+
+<div class="ad-slot"><span>advertisement</span></div>
+
+<a href="/" class="back-link">← กลับหน้าหลัก</a>
+
+<div id="histList">
+  <div class="loading" style="text-align:center;padding:40px;color:#555">⏳ กำลังโหลด...</div>
+</div>
+
+<div class="ad-slot"><span>advertisement</span></div>
+<footer>
+  ข้อมูลจาก <a href="https://www.glo.or.th" target="_blank" rel="noopener">สำนักงานสลากกินแบ่งรัฐบาล</a>
+</footer>
+<div class="anchor-ad"><span>advertisement</span></div>
+
+<script>
+async function loadHistory() {
+  try {
+    const res = await fetch('/api/history');
+    const list = await res.json();
+    if (!list.length) {
+      document.getElementById('histList').innerHTML =
+        '<div style="text-align:center;padding:40px;color:#555">ยังไม่มีข้อมูลย้อนหลัง</div>';
+      return;
+    }
+    document.getElementById('histList').innerHTML = list.map(d => `
+      <div class="hist-item" onclick="location.href='/?period=${encodeURIComponent(d.period)}'">
+        <div>
+          <div class="hist-date">${d.date}</div>
+          <div class="hist-sub">${d.period}</div>
+        </div>
+        <div class="hist-first">${(d.prizes?.first?.numbers?.[0]) || '—'}</div>
+      </div>`).join('');
+  } catch {
+    document.getElementById('histList').innerHTML =
+      '<div style="text-align:center;padding:40px;color:#555">โหลดไม่สำเร็จ</div>';
+  }
+}
+loadHistory();
+</script>
+</body>
+</html>

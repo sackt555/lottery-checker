@@ -1,0 +1,8 @@
+{
+  "name": "lottery-checker",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs"
+  }
+}
