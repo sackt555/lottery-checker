@@ -1,11 +1,71 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
 const DATA_FILE = path.join(__dirname, '..', 'data.json');
+const STATS_FILE = path.join(__dirname, '..', 'stats.json');
+const ADMIN_PIN = process.env.ADMIN_PIN || '1234';
+
+// ---- Visitor Stats ----
+function loadStats() {
+  try {
+    const s = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+    return { totalViews: 0, totalChecks: 0, daily: {}, recentChecks: [], ...s };
+  } catch {
+    return { totalViews: 0, totalChecks: 0, daily: {}, recentChecks: [] };
+  }
+}
+const stats = loadStats();
+let statsDirty = false;
+function saveStatsSoon() {
+  if (statsDirty) return;
+  statsDirty = true;
+  setTimeout(() => {
+    statsDirty = false;
+    try { fs.writeFileSync(STATS_FILE, JSON.stringify(stats)); } catch {}
+  }, 3000);
+}
+function todayKeyICT() {
+  return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+}
+function getVisitorHash(req) {
+  const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+  const ua = req.headers['user-agent'] || '';
+  return crypto.createHash('sha256').update(`${ip}|${ua}`).digest('hex').slice(0, 12);
+}
+function recordView(req) {
+  const ua = (req.headers['user-agent'] || '').toLowerCase();
+  if (/bot|crawler|spider|curl|wget/.test(ua)) return;
+  const day = todayKeyICT();
+  if (!stats.daily[day]) stats.daily[day] = { views: 0, checks: 0, uniques: [] };
+  stats.totalViews++;
+  stats.daily[day].views++;
+  const vh = getVisitorHash(req);
+  if (!stats.daily[day].uniques.includes(vh)) {
+    stats.daily[day].uniques.push(vh);
+  }
+  const keys = Object.keys(stats.daily).sort();
+  while (keys.length > 30) { delete stats.daily[keys.shift()]; }
+  saveStatsSoon();
+}
+function recordCheck(num, wins) {
+  const day = todayKeyICT();
+  if (!stats.daily[day]) stats.daily[day] = { views: 0, checks: 0, uniques: [] };
+  stats.totalChecks++;
+  stats.daily[day].checks++;
+  stats.recentChecks.unshift({
+    number: num,
+    won: wins.length > 0,
+    prize: wins.reduce((s, w) => s + w.prize, 0),
+    at: new Date().toISOString()
+  });
+  if (stats.recentChecks.length > 20) stats.recentChecks.length = 20;
+  saveStatsSoon();
+}
 
 // ---- Lottery Data Cache ----
 let cachedResult = null;
@@ -256,6 +316,39 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify(data));
   }
 
+  // API: admin stats (PIN protected)
+  if (url.pathname === '/api/admin/stats') {
+    const pin = req.headers['x-admin-pin'] || url.searchParams.get('pin') || '';
+    if (pin !== ADMIN_PIN) {
+      res.writeHead(401, {'Content-Type':'application/json'});
+      return res.end(JSON.stringify({ error: 'PIN ไม่ถูกต้อง' }));
+    }
+    const day = todayKeyICT();
+    const today = stats.daily[day] || { views: 0, checks: 0, uniques: [] };
+    const dailyList = Object.entries(stats.daily)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .slice(0, 14)
+      .map(([date, d]) => ({
+        date,
+        views: d.views || 0,
+        checks: d.checks || 0,
+        unique: Array.isArray(d.uniques) ? d.uniques.length : 0
+      }));
+    res.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store'});
+    return res.end(JSON.stringify({
+      onlineNow: sseClients.size,
+      totalViews: stats.totalViews,
+      totalChecks: stats.totalChecks,
+      todayViews: today.views || 0,
+      todayUnique: Array.isArray(today.uniques) ? today.uniques.length : 0,
+      todayChecks: today.checks || 0,
+      daily: dailyList,
+      recentChecks: stats.recentChecks.slice(0, 15),
+      period: cachedResult?.period || '',
+      updatedAt: cachedResult?.updatedAt || null
+    }));
+  }
+
   // API: check number
   if (url.pathname === '/api/check') {
     const num = (url.searchParams.get('n') || '').replace(/\D/g,'');
@@ -265,11 +358,15 @@ const server = http.createServer(async (req, res) => {
     }
     const data = await fetchLottery();
     const wins = checkNumber(num, data);
+    recordCheck(num, wins);
     res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
     return res.end(JSON.stringify({ number: num, wins, period: data.period, date: data.date }));
   }
 
   // Static files
+  if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/history.html') {
+    recordView(req);
+  }
   let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
   filePath = path.join(PUBLIC, filePath);
   if (!filePath.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
