@@ -97,7 +97,12 @@
 <!-- ═══ HEADER ═══ -->
 <header>
   <div class="logo">ตรวจหวย</div>
-  <div class="period-label" id="periodLabel">กำลังโหลด...</div>
+  <div class="period-row">
+    <span class="live-dot" id="liveDot" title="อัปเดตเรียลไทม์"></span>
+    <span class="period-label" id="periodLabel">กำลังโหลด...</span>
+    <button class="refresh-btn" id="refreshBtn" onclick="forceRefresh()" title="อัปเดตผลล่าสุด">↻</button>
+  </div>
+  <div class="updated-at" id="updatedAt"></div>
 </header>
 
 <!-- AD TOP -->

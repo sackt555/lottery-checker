@@ -6,22 +6,73 @@ function fmt(n) {
   return Number(n).toLocaleString('th-TH');
 }
 
-// ── LOAD ──
-async function loadLotto() {
+let lastSignature = '';
+
+// ── LOAD & REALTIME STREAM ──
+async function loadLotto(fresh = false) {
   try {
-    const res  = await fetch('/api/lotto');
+    const res  = await fetch(fresh ? '/api/lotto?fresh=1' : '/api/lotto');
     const data = await res.json();
-    renderResults(data);
+    applyData(data);
   } catch {
-    $('results').innerHTML = '<div style="text-align:center;padding:40px;color:#555">โหลดข้อมูลไม่สำเร็จ กรุณารีเฟรช</div>';
+    if (!lastSignature) {
+      $('results').innerHTML = '<div style="text-align:center;padding:40px;color:#555">โหลดข้อมูลไม่สำเร็จ กรุณารีเฟรช</div>';
+    }
   }
 }
 
-function renderResults(data) {
-  // period label
+function applyData(data) {
+  const sig = JSON.stringify(data.prizes) + data.period;
+  if (sig !== lastSignature) {
+    lastSignature = sig;
+    renderResults(data);
+    if ($('numInput').value.replace(/\D/g, '').length >= 2 && $('checkResult').innerHTML) {
+      checkNum();
+    }
+  }
+  updateMeta(data);
+}
+
+function updateMeta(data) {
   const lbl = $('periodLabel');
-  lbl.textContent = data.period + (data._fallback ? ' (ตัวอย่าง)' : '');
+  lbl.textContent = (data.date || data.period || '') + (data._fallback ? ' (ตัวอย่าง)' : '');
   lbl.classList.add('ready');
+
+  const dot = $('liveDot');
+  if (dot && !data._fallback) dot.classList.add('online');
+
+  const upd = $('updatedAt');
+  if (upd) {
+    const t = data.updatedAt ? new Date(data.updatedAt) : new Date();
+    const hhmmss = t.toLocaleTimeString('th-TH', { hour12: false });
+    upd.textContent = data._fallback
+      ? 'โหมดออฟไลน์'
+      : `LIVE • อัปเดตเมื่อ ${hhmmss}`;
+  }
+}
+
+async function forceRefresh() {
+  const btn = $('refreshBtn');
+  if (btn) btn.classList.add('spin');
+  await loadLotto(true);
+  if (btn) setTimeout(() => btn.classList.remove('spin'), 400);
+}
+
+function startRealtime() {
+  if (typeof EventSource !== 'undefined') {
+    const es = new EventSource('/api/stream');
+    es.onmessage = e => {
+      try { applyData(JSON.parse(e.data)); } catch {}
+    };
+    es.onerror = () => {
+      const dot = $('liveDot');
+      if (dot) dot.classList.remove('online');
+    };
+  }
+  setInterval(() => loadLotto(false), 30000);
+}
+
+function renderResults(data) {
 
   const p = data.prizes;
   let html = '';
@@ -158,3 +209,4 @@ $('numInput').addEventListener('input', e => {
 $('numInput').addEventListener('keydown', e => { if(e.key==='Enter') checkNum(); });
 
 loadLotto();
+startRealtime();

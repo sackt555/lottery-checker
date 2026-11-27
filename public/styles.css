@@ -40,13 +40,60 @@ header {
   letter-spacing: .08em;
   color: var(--text);
 }
+.period-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+  display: inline-block;
+  transition: background .3s;
+}
+.live-dot.online {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
 .period-label {
-  font-size: .78rem;
+  font-size: .82rem;
   color: var(--muted);
   letter-spacing: .04em;
   transition: color .3s;
 }
-.period-label.ready { color: var(--accent); }
+.period-label.ready { color: var(--accent); font-weight: 500; }
+.refresh-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  font-size: .85rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s, border-color .15s, transform .3s;
+}
+.refresh-btn:hover { color: var(--text); border-color: #444; }
+.refresh-btn.spin { animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.updated-at {
+  font-size: .68rem;
+  color: #555;
+  margin-top: 2px;
+  min-height: 14px;
+}
 
 /* ── AD SLOT ── */
 .ad-slot {

@@ -10,71 +10,130 @@ const DATA_FILE = path.join(__dirname, '..', 'data.json');
 // ---- Lottery Data Cache ----
 let cachedResult = null;
 let lastFetch = 0;
-const CACHE_MS = 10 * 60 * 1000; // 10 min
+let lastHash = '';
+const sseClients = new Set();
+
+const THAI_MONTHS = [
+  'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'
+];
+
+function getCacheTtlMs() {
+  // During Thai draw window (1st & 16th, 14:00-17:00 ICT), refresh every 10s
+  const ict = new Date(Date.now() + 7 * 3600 * 1000);
+  const day = ict.getUTCDate();
+  const hr = ict.getUTCHours();
+  if ((day === 1 || day === 16) && hr >= 14 && hr <= 17) return 10 * 1000;
+  return 60 * 1000; // 1 min normally
+}
 
 function loadLocal() {
   try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return null; }
 }
 function saveLocal(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  try {
+    const prev = loadLocal();
+    const history = Array.isArray(prev?._history) ? [...prev._history] : [];
+    if (data && !data._fallback && data.period) {
+      const idx = history.findIndex(h => h.period === data.period);
+      const entry = {
+        date: data.date,
+        period: data.period,
+        prizes: { first: data.prizes.first, back2: data.prizes.back2 }
+      };
+      if (idx >= 0) history[idx] = entry;
+      else history.unshift(entry);
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ ...data, _history: history.slice(0, 30) }, null, 2));
+  } catch (e) {
+    console.log('saveLocal error:', e.message);
+  }
 }
 
-async function fetchLottery() {
-  const now = Date.now();
-  if (cachedResult && now - lastFetch < CACHE_MS) return cachedResult;
+function formatThaiDate(isoOrDisplay, displayDate) {
+  if (displayDate?.date && displayDate?.month && displayDate?.year) {
+    const d = Number(displayDate.date);
+    const m = Number(displayDate.month);
+    const yBE = Number(displayDate.year) + 543;
+    return {
+      date: `${d} ${THAI_MONTHS[m - 1] || ''} ${yBE}`,
+      period: `งวด ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${String(yBE).slice(-2)}`
+    };
+  }
+  return { date: isoOrDisplay || '', period: isoOrDisplay || '' };
+}
 
+function normalizeGLO(json) {
   try {
-    // Try alotterydb API (free, public)
-    const res = await fetch('https://api.alotterydb.com/lotto', {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
+    const r = json?.response;
+    const d = r?.data;
+    if (!d || !d.first) return null;
+    const vals = arr => (arr || []).map(x => String(x?.value ?? x ?? '').trim()).filter(Boolean);
+    const { date, period } = formatThaiDate(r.date, json.displayDate);
+    return {
+      date,
+      period,
+      rawDate: r.date || '',
+      updatedAt: new Date().toISOString(),
+      source: 'GLO Official',
+      prizes: {
+        first:    { prize: Number(d.first.price)  || 6000000, numbers: vals(d.first.number) },
+        firstAdj: { prize: Number(d.near1?.price) || 100000,  numbers: vals(d.near1?.number) },
+        second:   { prize: Number(d.second?.price)|| 200000,  numbers: vals(d.second?.number) },
+        third:    { prize: Number(d.third?.price) || 80000,   numbers: vals(d.third?.number) },
+        fourth:   { prize: Number(d.fourth?.price)|| 40000,   numbers: vals(d.fourth?.number) },
+        fifth:    { prize: Number(d.fifth?.price) || 20000,   numbers: vals(d.fifth?.number) },
+        front3:   { prize: Number(d.last3f?.price)|| 4000,    numbers: vals(d.last3f?.number) },
+        back3:    { prize: Number(d.last3b?.price)|| 4000,    numbers: vals(d.last3b?.number) },
+        back2:    { prize: Number(d.last2?.price) || 2000,    numbers: vals(d.last2?.number) }
+      }
+    };
+  } catch { return null; }
+}
+
+function broadcastUpdate(data) {
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  for (const client of sseClients) {
+    try { client.write(payload); } catch { sseClients.delete(client); }
+  }
+}
+
+async function fetchLottery(force = false) {
+  const now = Date.now();
+  if (!force && cachedResult && now - lastFetch < getCacheTtlMs()) return cachedResult;
+
+  // 1. Try Official GLO API
+  try {
+    const res = await fetch('https://www.glo.or.th/api/lottery/getLatestLottery', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      body: '{}',
       signal: AbortSignal.timeout(8000)
     });
     if (res.ok) {
       const json = await res.json();
-      // Normalize format
-      const data = normalize(json);
+      const data = normalizeGLO(json);
       if (data) {
+        const hash = JSON.stringify(data.prizes) + data.period;
+        const changed = hash !== lastHash;
+        lastHash = hash;
         cachedResult = data;
         lastFetch = now;
         saveLocal(data);
+        if (changed && sseClients.size > 0) broadcastUpdate(data);
         return data;
       }
     }
   } catch (e) {
-    console.log('API fetch failed:', e.message);
+    console.log('GLO API fetch failed:', e.message);
   }
 
-  // Fallback: local cache
+  // 2. Fallback: local cache
   const local = loadLocal();
-  if (local) { cachedResult = local; return local; }
+  if (local && !local._fallback) { cachedResult = local; return local; }
 
-  // Fallback: hardcoded last known result
+  // 3. Fallback: hardcoded last known result
   return fallbackData();
-}
-
-function normalize(json) {
-  try {
-    // alotterydb format
-    if (json.response) {
-      const r = json.response;
-      return {
-        date: r.date || '',
-        period: r.period || '',
-        prizes: {
-          first:    { prize: 6000000, numbers: [r.first] },
-          firstAdj: { prize: 100000,  numbers: r.near1 || [] },
-          second:   { prize: 200000,  numbers: r.second || [] },
-          third:    { prize: 80000,   numbers: r.third || [] },
-          fourth:   { prize: 40000,   numbers: r.fourth || [] },
-          fifth:    { prize: 20000,   numbers: r.fifth || [] },
-          front3:   { prize: 4000,    numbers: r.front3 || [] },
-          back3:    { prize: 4000,    numbers: r.back3 || [] },
-          back2:    { prize: 2000,    numbers: [r.back2] }
-        }
-      };
-    }
-    return null;
-  } catch { return null; }
 }
 
 function fallbackData() {
@@ -168,10 +227,32 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify(history.slice(0, 20)));
   }
 
+  // API: real-time SSE stream
+  if (url.pathname === '/api/stream') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    sseClients.add(res);
+    const data = await fetchLottery();
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const heartbeat = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+    }, 25000);
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      sseClients.delete(res);
+    });
+    return;
+  }
+
   // API: get lottery results
   if (url.pathname === '/api/lotto') {
-    const data = await fetchLottery();
-    res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+    const force = url.searchParams.get('fresh') === '1';
+    const data = await fetchLottery(force);
+    res.writeHead(200, {'Content-Type':'application/json','Cache-Control':'no-store','Access-Control-Allow-Origin':'*'});
     return res.end(JSON.stringify(data));
   }
 
@@ -204,5 +285,9 @@ const server = http.createServer(async (req, res) => {
 const PORT = Number(process.env.PORT) || 3001;
 server.listen(PORT, () => {
   console.log(`🎰 Lottery Checker running at http://localhost:${PORT}`);
-  console.log('📡 Fetching real lottery data from api.alotterydb.com...');
+  console.log('📡 Real-time GLO Official API enabled');
+  fetchLottery(true).catch(() => {});
+  setInterval(() => {
+    if (sseClients.size > 0) fetchLottery().catch(() => {});
+  }, 15000);
 });
